@@ -1,6 +1,7 @@
 import os, strutils, threadpool, asyncdispatch, parseopt, tables
 
 var callbacks = tables.initTable[string, proc(params: varargs[string]): string]()
+var channel: Channel[string]
 var infos: seq[string] = @[]
 var pointer: string
 var temp_head = """ 
@@ -47,6 +48,7 @@ proc c_callback(p: OptParser, key: string): void =
 
     
 proc parse_cmd*(c: string): void =
+  echo("parse cmd ", c)
   var cmd: string = c
   if cmd.len == 0:
       cmd = "--i"      
@@ -83,20 +85,34 @@ proc defaults(): void =
   pointer = "> "
   param_to_callback("--i", "--i See all arguments", info)
     
+var cmd: FlowVar[string]
+var re: string
+
+proc thread_repl*() {.thread.} =
+  var line: string
+  while true:
+    line = readline(stdin)
+    channel.send(line)
+
+proc doit() {.async.} =
+  open channel
+  var
+    thread: Thread[void]
+    data_available: bool
+    msg: string
+  thread.createThread(thread_repl)
+  while true:
+    (data_available, msg) = tryRecv(channel)
+    if data_available:
+      parse_cmd(msg)
+    await asyncdispatch.sleepAsync(500)
+
 proc start_cmd*(params: string): void =
   defaults()
   parse_cmd(params)
 
-var cmd: FlowVar[string]
-var re: string
-
-proc start_repl*() {.async.} =
-  cmd = spawn readline(stdin)
-  while threadpool.isReady(cmd) == false:
-    await asyncdispatch.sleepAsync(1000)  
-  re = ^cmd
-  parse_cmd(re)
-  waitFor start_repl()
+proc start_repl*(): void =
+  waitFor doit()
     
 defaults()
 echo("\n")
