@@ -94,7 +94,7 @@ proc thread_repl*() {.thread.} =
     line = readline(stdin)
     channel.send(line)
 
-proc doit() {.async.} =
+proc doit(): void =
   open channel
   var
     thread: Thread[void]
@@ -105,14 +105,18 @@ proc doit() {.async.} =
     (data_available, msg) = tryRecv(channel)
     if data_available:
       parse_cmd(msg)
-    await asyncdispatch.sleepAsync(500)
+    if asyncdispatch.hasPendingOperations():
+      poll()
+    else:
+      sleep(500)
+
 
 proc start_cmd*(params: string): void =
   defaults()
   parse_cmd(params)
 
 proc start_repl*(): void =
-  waitFor doit()
+  doit()
     
 defaults()
 echo("\n")
